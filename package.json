@@ -1,14 +1,14 @@
 {
   "name": "infinite-llm-dialogue-back",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "AWS Lambda function for generating responses using Google Generative AI",
   "main": "index.js",
   "scripts": {
-    "bump": "npm version patch && git push --follow-tags",
+    "bump": "npm version patch --no-git-tag-version",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "zip": "zip -r deployment-package.zip index.js node_modules",
+    "zip": "zip -r deployment-package.zip index.js package.json node_modules",
     "upload": "aws lambda update-function-code --function-name CallAIAPI --region us-east-1 --zip-file fileb://deployment-package.zip",
-    "deploy": "npm run zip && npm run upload"
+    "deploy": "npm run bump && npm run zip && npm run upload"
   },
   "keywords": [],
   "author": "Your Name",
@@ -17,6 +17,7 @@
     "@google/generative-ai": "^0.21.0",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.7.9",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "uuid": "^11.1.0"
   }
 }
