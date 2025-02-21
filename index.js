@@ -67,7 +67,7 @@ async function generateResponse(userInput, personality, debug) {
   }
 }
 
-async function News() {
+async function News(debug) {
   const params = {
     TableName: NEWS_TABLE_NAME,
     Key: { request_hash: "1" },
@@ -76,13 +76,16 @@ async function News() {
   try {
     const data = await dynamoDB.get(params).promise();
     if (data.Item) {
+      log(debug, "News data found in cache:", data.Item);
       return {
         statusCode: 200,
         body: JSON.stringify(data.Item),
       };
     } else {
+      log(debug, `News data not found in cache. Fetching from API ${NewsURL}`);
       const response = await axios.get(NewsURL);
       const newsData = response.data;
+      log(debug, "Fetched news data:", newsData);
 
       const putParams = {
         TableName: NEWS_TABLE_NAME,
@@ -94,7 +97,7 @@ async function News() {
       };
 
       await dynamoDB.put(putParams).promise();
-
+      log(debug, "Stored news data in cache:", putParams.Item);
       return {
         statusCode: 200,
         body: JSON.stringify(putParams.Item),
@@ -119,8 +122,9 @@ exports.handler = async (event) => {
     log(debug, "Received event:", event);
     log(debug, "Parsed userInput:", userInput);
 
-    if (event.path === "/news") {
-      return await News();
+    if (event.rawPath === "/news") {
+      log(debug, "Fetching news...");
+      return await News(debug);
     }
 
     if (!userInput) {

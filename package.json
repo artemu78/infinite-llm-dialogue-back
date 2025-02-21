@@ -4,8 +4,11 @@
   "description": "AWS Lambda function for generating responses using Google Generative AI",
   "main": "index.js",
   "scripts": {
+    "bump": "npm version patch && git push --follow-tags",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "zip": "zip -r deployment-package.zip index.js node_modules"
+    "zip": "zip -r deployment-package.zip index.js node_modules",
+    "upload": "aws lambda update-function-code --function-name CallAIAPI --region us-east-1 --zip-file fileb://deployment-package.zip",
+    "deploy": "npm run zip && npm run upload"
   },
   "keywords": [],
   "author": "Your Name",
