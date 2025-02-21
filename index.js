@@ -1,9 +1,13 @@
-// index.js (for AWS Lambda)
-
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const AWS = require("aws-sdk");
+const axios = require("axios");
 
+const VITE_GNEWS_API_KEY = process.env.VITE_GNEWS_API_KEY;
+const NEWS_TABLE_NAME = "InfiniteChat_NewsAPI_Cache";
 const MODEL_NAME = process.env.GOOGLE_MODEL_NAME;
 const API_KEY = process.env.GOOGLE_API_KEY;
+const NewsURL = `https://gnews.io/api/v4/search?q=artificial intelligence&lang=en&max=5&apikey=${VITE_GNEWS_API_KEY}`;
+const dynamoDB = new AWS.DynamoDB.DocumentClient();
 
 const personalities = {
   comedian: {
@@ -63,6 +67,48 @@ async function generateResponse(userInput, personality, debug) {
   }
 }
 
+async function News() {
+  const params = {
+    TableName: NEWS_TABLE_NAME,
+    Key: { request_hash: "1" },
+  };
+
+  try {
+    const data = await dynamoDB.get(params).promise();
+    if (data.Item) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify(data.Item),
+      };
+    } else {
+      const response = await axios.get(NewsURL);
+      const newsData = response.data;
+
+      const putParams = {
+        TableName: NEWS_TABLE_NAME,
+        Item: {
+          request_hash: "1",
+          news: newsData,
+          ttl: Math.floor(Date.now() / 1000) + 20 * 60, // 1 hour expiry
+        },
+      };
+
+      await dynamoDB.put(putParams).promise();
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify(putParams.Item),
+      };
+    }
+  } catch (error) {
+    console.error("Error fetching or storing news:", error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Internal Server Error" }),
+    };
+  }
+}
+
 exports.handler = async (event) => {
   let debug = false;
   try {
@@ -72,6 +118,10 @@ exports.handler = async (event) => {
 
     log(debug, "Received event:", event);
     log(debug, "Parsed userInput:", userInput);
+
+    if (event.path === "/news") {
+      return await News();
+    }
 
     if (!userInput) {
       return {
