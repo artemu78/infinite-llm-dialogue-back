@@ -118,9 +118,10 @@ async function storeChatMessage(message, sender, debug) {
   const params = {
     TableName: CHAT_TABLE_NAME,
     Item: {
-      id: datetime,
+      id: new Date().getTime().toString(),
       message: message,
       sender: sender,
+      datetime: new Date().getTime(),
     },
   };
 
@@ -136,19 +137,12 @@ async function storeChatMessage(message, sender, debug) {
 async function getChat(debug) {
   const params = {
     TableName: CHAT_TABLE_NAME,
-    KeyConditionExpression: "#id = :id",
-    ExpressionAttributeNames: {
-      "#id": "id",
-    },
-    ExpressionAttributeValues: {
-      ":id": "chat", // Assuming "chat" is the partition key value for all chat messages
-    },
     Limit: 30,
     ScanIndexForward: false, // Retrieve the latest items first
   };
 
   try {
-    const data = await dynamoDB.query(params).promise();
+    const data = await dynamoDB.scan(params).promise();
     log(debug, "Retrieved chat messages:", data.Items);
     return {
       statusCode: 200,
