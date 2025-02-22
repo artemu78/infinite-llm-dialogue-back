@@ -1,7 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const AWS = require("aws-sdk");
 const axios = require("axios");
-const { v4: uuidv4 } = require("uuid"); // Add this line to import the uuid library
 
 const VITE_GNEWS_API_KEY = process.env.VITE_GNEWS_API_KEY;
 const NEWS_TABLE_NAME = "InfiniteChat_NewsAPI_Cache";
@@ -119,8 +118,7 @@ async function storeChatMessage(message, sender, debug) {
   const params = {
     TableName: CHAT_TABLE_NAME,
     Item: {
-      id: uuidv4(), // Generate a unique ID
-      datetime: Date.now(), // Get the current timestamp
+      id: datetime,
       message: message,
       sender: sender,
     },
@@ -138,12 +136,19 @@ async function storeChatMessage(message, sender, debug) {
 async function getChat(debug) {
   const params = {
     TableName: CHAT_TABLE_NAME,
+    KeyConditionExpression: "#id = :id",
+    ExpressionAttributeNames: {
+      "#id": "id",
+    },
+    ExpressionAttributeValues: {
+      ":id": "chat", // Assuming "chat" is the partition key value for all chat messages
+    },
     Limit: 30,
     ScanIndexForward: false, // Retrieve the latest items first
   };
 
   try {
-    const data = await dynamoDB.scan(params).promise();
+    const data = await dynamoDB.query(params).promise();
     log(debug, "Retrieved chat messages:", data.Items);
     return {
       statusCode: 200,
