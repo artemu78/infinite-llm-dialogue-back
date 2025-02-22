@@ -135,11 +135,35 @@ async function storeChatMessage(message, sender, debug) {
   }
 }
 
+async function getChat(debug) {
+  const params = {
+    TableName: CHAT_TABLE_NAME,
+    Limit: 30,
+    ScanIndexForward: false, // Retrieve the latest items first
+  };
+
+  try {
+    const data = await dynamoDB.scan(params).promise();
+    log(debug, "Retrieved chat messages:", data.Items);
+    return {
+      statusCode: 200,
+      body: JSON.stringify(data.Items),
+    };
+  } catch (error) {
+    console.error("Error retrieving chat messages:", error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Internal Server Error" }),
+    };
+  }
+}
+
 exports.handler = async (event) => {
   let debug = false;
   try {
     const requestBody = JSON.parse(event.body);
     const userInput = requestBody.userInput;
+    const userName = requestBody.userName;
     debug = requestBody.debug || false;
 
     log(debug, "Received event:", event);
@@ -150,13 +174,18 @@ exports.handler = async (event) => {
       return await News(debug);
     }
 
+    if (event.rawPath === "/getchat") {
+      log(debug, "Retrieving chat messages...");
+      return await getChat(debug);
+    }
+
     if (!userInput) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Missing userInput in request body" }),
       };
     }
-    await storeChatMessage(userInput, "user", debug);
+    await storeChatMessage(userInput, userName, debug);
     const chosenPersonalities = [];
     const numPersonalities = Math.random() < 0.5 ? 1 : 3; // Randomly choose 1 or 3 personalities
 
