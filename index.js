@@ -194,7 +194,7 @@ async function checkMessageDelay(senderEmail, debug) {
   const params = {
     TableName: CHAT_TABLE_NAME,
     IndexName: "SenderEmailIndex", // Use the new GSI
-    KeyConditionExpression: "senderEmail = :email",
+    KeyConditionExpression: "email = :email",
     ExpressionAttributeValues: {
       ":email": senderEmail,
     },
@@ -275,6 +275,7 @@ exports.handler = async (event) => {
         body: JSON.stringify({ error: "Missing userInput in request body" }),
       };
     }
+
     const messageDelayCheck = await checkMessageDelay(tokenInfo.email, debug);
     if (!messageDelayCheck.canSend) {
       return {
@@ -302,7 +303,7 @@ exports.handler = async (event) => {
       chosenPersonalities.map(async (personalityKey) => {
         const personality = personalities[personalityKey];
         const response = await generateResponse(userInput, personality, debug);
-        await storeChatMessage(response, personalityKey, "", debug); // Store each generated response
+        await storeChatMessage(response, personalityKey, "-", debug); // Store each generated response
         return {
           personality: personalityKey,
           response: response,
