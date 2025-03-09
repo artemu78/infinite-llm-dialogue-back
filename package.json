@@ -1,6 +1,6 @@
 {
   "name": "infinite-llm-dialogue-back",
-  "version": "1.0.8",
+  "version": "1.0.12",
   "description": "AWS Lambda function for generating responses using Google Generative AI",
   "main": "index.js",
   "scripts": {
@@ -19,6 +19,8 @@
     "@google/generative-ai": "^0.21.0",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.7.9",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "google-auth-library": "^9.15.1",
+    "serverless-dotenv-plugin": "^6.0.0"
   }
 }
