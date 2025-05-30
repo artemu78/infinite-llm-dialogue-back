@@ -1,77 +1,20 @@
-// index.js (for AWS Lambda)
+// index.js (for AWS Lambda - deployment version)
 
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-const MODEL_NAME = process.env.GOOGLE_MODEL_NAME;
-const API_KEY = process.env.GOOGLE_API_KEY;
-
-const personalities = {
-  comedian: {
-    phrase: "Hey, stand-up bot, give me the funny take on ",
-    moods: [
-      "Alright, let's tickle some funny bones! What's the deal with ",
-      "Buckle up, buttercup, because life's a joke and I'm here to deliver the punchline. Tell me about ",
-      "Okay, let's get serious...ly funny. Hit me with your best shot. What's the question? ",
-    ],
-  },
-  captainObvious: {
-    phrase: "Okay, Captain Obvious, tell me something I *don't* know about ",
-    moods: [
-      "Fasten your seatbelts, folks, because I'm about to blow your mind with the sheer obviousness of this revelation! Inquire away... ",
-      "Oh, my sweet summer child, let me enlighten you with the simplest of truths. Ask your question, and I shall grace you with my wisdom. ",
-      "Ah, yes, the mysteries of the universe often hide in plain sight. Let's delve into the profound depths of the obvious. What is your query? ",
-    ],
-  },
-  counselor: {
-    phrase:
-      "Dear Dr. Feelgood, I'm struggling with... Can you offer some advice? ",
-    moods: [
-      "Come, come, my dear, let's have a heart-to-heart. Tell me what's troubling you, and we'll find a way to soothe your soul. ",
-      "You are stronger than you think! Let's tap into your inner power and overcome this challenge. Tell me what's on your mind. ",
-      "Let's break this down step by step. Tell me about the situation, and we'll create a plan to navigate through it. ",
-    ],
-  },
-};
-
-function log(debug, message, ...optionalParams) {
-  if (debug) {
-    console.log(message, ...optionalParams);
-  }
-}
-
-async function generateResponse(userInput, personality, debug) {
-  try {
-    const genAI = new GoogleGenerativeAI(API_KEY);
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-
-    const randomMood =
-      personality.moods[Math.floor(Math.random() * personality.moods.length)];
-    const prompt = randomMood + userInput;
-
-    log(debug, "Generated prompt:", prompt);
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    log(debug, "Generated response text:", text);
-
-    return text;
-  } catch (error) {
-    console.error("Error generating response:", error);
-    throw error;
-  }
-}
+// Import from shared config and services
+// Adjust relative paths assuming deployment/index.js is one level down.
+const { API_KEY, MODEL_NAME, personalities, log } = require('../config');
+const { generateAiResponse } = require('../services/generativeAiService');
 
 exports.handler = async (event) => {
   let debug = false;
   try {
-    const requestBody = JSON.parse(event.body);
+    // Assuming event.body is a JSON string
+    const requestBody = event.body ? JSON.parse(event.body) : {};
     const userInput = requestBody.userInput;
     debug = requestBody.debug || false;
 
-    log(debug, "Received event:", event);
-    log(debug, "Parsed userInput:", userInput);
+    log(debug, "Deployment Handler: Received event:", event); // Add context for deployment logs
+    log(debug, "Deployment Handler: Parsed userInput:", userInput);
 
     if (!userInput) {
       return {
@@ -80,42 +23,52 @@ exports.handler = async (event) => {
       };
     }
 
+    // Randomly choose 1 or 3 personalities - same logic as main index.js
     const chosenPersonalities = [];
-    const numPersonalities = Math.random() < 0.5 ? 1 : 3; // Randomly choose 1 or 3 personalities
+    const numPersonalities = Math.random() < 0.5 ? 1 : 3;
+    const personalityKeys = Object.keys(personalities);
 
     // Ensure unique personalities are chosen
-    while (chosenPersonalities.length < numPersonalities) {
-      const personalityKeys = Object.keys(personalities);
-      const randomPersonality =
-        personalityKeys[Math.floor(Math.random() * personalityKeys.length)];
-      if (!chosenPersonalities.includes(randomPersonality)) {
-        chosenPersonalities.push(randomPersonality);
-      }
+    while (chosenPersonalities.length < numPersonalities && personalityKeys.length > 0) {
+      const randomIndex = Math.floor(Math.random() * personalityKeys.length);
+      // Splice returns an array, so take the first element
+      const randomPersonalityKey = personalityKeys.splice(randomIndex, 1)[0];
+      // The check `if (!chosenPersonalities.includes(randomPersonalityKey))` is redundant
+      // because splice removes the key from the array, preventing it from being chosen again.
+      chosenPersonalities.push(randomPersonalityKey);
     }
 
-    log(debug, "Chosen personalities:", chosenPersonalities);
+    log(debug, "Deployment Handler: Chosen personalities:", chosenPersonalities);
 
     const responses = await Promise.all(
       chosenPersonalities.map(async (personalityKey) => {
-        const personality = personalities[personalityKey];
-        const response = await generateResponse(userInput, personality, debug);
+        const personalityConfig = personalities[personalityKey];
+        if (!personalityConfig) {
+            log(debug, `Deployment Handler: Personality key "${personalityKey}" not found in config. Skipping.`);
+            return null;
+        }
+        // Use the imported generateAiResponse function
+        const responseText = await generateAiResponse(userInput, personalityConfig, debug);
         return {
           personality: personalityKey,
-          response: response,
+          response: responseText,
         };
       })
     );
 
-    log(debug, "Generated responses:", responses);
+    const validResponses = responses.filter(r => r !== null);
+
+    log(debug, "Deployment Handler: Generated responses:", validResponses);
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ responses: responses }),
+      body: JSON.stringify({ responses: validResponses }),
     };
   } catch (error) {
-    console.error("Error processing request:", error);
+    console.error("Deployment Handler: Error processing request:", error);
     return {
       statusCode: 500,
+      // Provide a more generic error message for deployment, but log details
       body: JSON.stringify({ error: "Internal Server Error" }),
     };
   }
