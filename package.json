@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "bump": "npm version patch --no-git-tag-version",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
     "zip": "zip -r deployment-package.zip index.js package.json node_modules",
     "upload-s3": "aws s3 cp deployment-package.zip s3://for-lambda-zip-uploads/deployment-package.zip",
     "update-lambda": "aws lambda update-function-code --function-name CallAIAPI --region us-east-1 --s3-bucket for-lambda-zip-uploads --s3-key deployment-package.zip",
@@ -22,5 +22,10 @@
     "dotenv": "^16.4.7",
     "google-auth-library": "^9.15.1",
     "serverless-dotenv-plugin": "^6.0.0"
+  },
+  "devDependencies": {
+    "aws-sdk-mock": "^6.2.1",
+    "axios-mock-adapter": "^2.1.0",
+    "jest": "^29.7.0"
   }
 }
