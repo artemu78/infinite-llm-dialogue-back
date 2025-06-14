@@ -1,6 +1,6 @@
 {
   "name": "infinite-llm-dialogue-back",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "AWS Lambda function for generating responses using Google Generative AI",
   "main": "index.js",
   "scripts": {
