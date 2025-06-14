@@ -36,7 +36,207 @@ jest.mock("@google/generative-ai", () => ({
 
 jest.mock("axios"); // Global mock for axios
 jest.mock("google-auth-library", () => ({ OAuth2Client: jest.fn() }));
+
+// --- Mocks for services used by index.js handler ---
+jest.mock("../auth", () => ({
+  verifyAccessToken: jest.fn(),
+}));
+jest.mock("../services/dynamoDbService", () => ({
+  getChatLog: jest.fn(),
+  storeChatMessage: jest.fn(),
+  checkMessageRateLimit: jest.fn(),
+}));
+jest.mock("../services/newsService", () => ({
+  getNews: jest.fn(),
+}));
+jest.mock("../services/generativeAiService", () => ({
+  generateAiResponse: jest.fn(),
+}));
 // --- End Centralized Mocks ---
+
+// --- Handler Tests ---
+describe("handler", () => {
+  const { handler } = require("../index");
+  const { verifyAccessToken } = require("../auth");
+  const { getChatLog, storeChatMessage, checkMessageRateLimit } = require("../services/dynamoDbService");
+  const { getNews } = require("../services/newsService");
+  const { generateAiResponse } = require("../services/generativeAiService"); // Added for completeness
+
+  let consoleErrorSpy;
+  let consoleLogSpy;
+
+  beforeEach(() => {
+    jest.clearAllMocks(); // Clear all mocks before each test
+    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    consoleLogSpy = jest.spyOn(console, "log").mockImplementation(() => {}); // For debug logs in handler
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+  });
+
+  // Test for /checkChats path
+  describe("/checkChats path", () => {
+    test("should call getChatLog and return its response", async () => {
+      verifyAccessToken.mockResolvedValueOnce({ email: "test@example.com" });
+      const mockChatItems = [{ message: "Test chat from /checkChats" }];
+      // getChatLog in dynamoDbService returns an object with statusCode and body
+      const mockChatResponse = { statusCode: 200, body: JSON.stringify(mockChatItems) };
+      getChatLog.mockResolvedValueOnce(mockChatResponse);
+
+      const mockEvent = {
+        headers: { Authorization: "Bearer test-token" },
+        rawPath: "/checkChats",
+      };
+
+      const result = await handler(mockEvent);
+
+      expect(verifyAccessToken).toHaveBeenCalledWith("test-token", false); // debug is false by default
+      expect(getChatLog).toHaveBeenCalledTimes(1);
+      expect(getChatLog).toHaveBeenCalledWith(false); // debug is false by default
+      expect(result).toEqual(mockChatResponse);
+    });
+
+    test("should return 401 if verifyAccessToken fails", async () => {
+      verifyAccessToken.mockRejectedValueOnce(new Error("Invalid token"));
+
+      const mockEvent = {
+        headers: { Authorization: "Bearer test-token" },
+        rawPath: "/checkChats",
+      };
+
+      const result = await handler(mockEvent);
+      expect(result.statusCode).toBe(401);
+      expect(JSON.parse(result.body).error).toBe("Invalid token");
+    });
+  });
+
+  // Test for /getchat path (similar to /checkChats but good to have its own)
+  describe("/getchat path", () => {
+    test("should call getChatLog and return its response", async () => {
+      verifyAccessToken.mockResolvedValueOnce({ email: "test@example.com" });
+      const mockChatItems = [{ message: "Test chat from /getchat" }];
+      const mockChatResponse = { statusCode: 200, body: JSON.stringify(mockChatItems) };
+      getChatLog.mockResolvedValueOnce(mockChatResponse);
+
+      const mockEvent = {
+        headers: { Authorization: "Bearer test-token" },
+        rawPath: "/getchat",
+      };
+
+      const result = await handler(mockEvent);
+
+      expect(verifyAccessToken).toHaveBeenCalledWith("test-token", false);
+      expect(getChatLog).toHaveBeenCalledTimes(1);
+      expect(getChatLog).toHaveBeenCalledWith(false);
+      expect(result).toEqual(mockChatResponse);
+    });
+  });
+
+  // Test for /news path
+  describe("/news path", () => {
+    test("should call getNews and return its response", async () => {
+      verifyAccessToken.mockResolvedValueOnce({ email: "test@example.com" });
+      const mockNewsData = { articles: [{ title: "Test News" }] };
+      const mockNewsResponse = { statusCode: 200, body: JSON.stringify(mockNewsData) };
+      getNews.mockResolvedValueOnce(mockNewsResponse);
+
+      const mockEvent = {
+        headers: { Authorization: "Bearer test-token" },
+        rawPath: "/news",
+      };
+
+      const result = await handler(mockEvent);
+      expect(verifyAccessToken).toHaveBeenCalledWith("test-token", false);
+      expect(getNews).toHaveBeenCalledTimes(1);
+      expect(getNews).toHaveBeenCalledWith(false);
+      expect(result).toEqual(mockNewsResponse);
+    });
+  });
+
+  // Test for main chat processing path (e.g. event.rawPath === "/")
+  describe("main chat processing path (e.g., / )", () => {
+    const mockUserInput = "Hello AI";
+    const mockUserName = "TestUser";
+    const mockUserEmail = "test@example.com";
+
+    const getMockEvent = (userInput = mockUserInput, rawPath = "/") => ({
+      headers: { Authorization: "Bearer test-token" },
+      rawPath: rawPath,
+      body: JSON.stringify({ userInput, userName: mockUserName, debug: false }),
+    });
+
+    test("should process user input and return AI responses", async () => {
+      verifyAccessToken.mockResolvedValueOnce({ email: mockUserEmail });
+      checkMessageRateLimit.mockResolvedValueOnce({ canSend: true });
+      storeChatMessage.mockResolvedValue({}); // Mock for storing user message
+      generateAiResponse.mockResolvedValue("AI response");
+      storeChatMessage.mockResolvedValue({}); // Mock for storing AI message
+
+      const mockEvent = getMockEvent();
+      const result = await handler(mockEvent);
+
+      expect(verifyAccessToken).toHaveBeenCalledWith("test-token", false);
+      expect(checkMessageRateLimit).toHaveBeenCalledWith(mockUserEmail, false);
+      expect(storeChatMessage).toHaveBeenCalledWith(mockUserInput, mockUserName, mockUserEmail, false); // User's message
+      expect(generateAiResponse).toHaveBeenCalled(); // Called for each chosen personality
+      expect(storeChatMessage).toHaveBeenCalledWith("AI response", expect.any(String), "-", false); // AI's message
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.responses).toBeInstanceOf(Array);
+      expect(body.responses.length).toBeGreaterThanOrEqual(1); // Depending on random personality choice
+      expect(body.responses[0].response).toBe("AI response");
+    });
+
+    test("should return 400 if userInput is missing", async () => {
+      verifyAccessToken.mockResolvedValueOnce({ email: mockUserEmail });
+      const mockEvent = { // No body or userInput
+        headers: { Authorization: "Bearer test-token" },
+        rawPath: "/",
+      };
+      // Or more explicitly: const mockEvent = getMockEvent(undefined);
+      // However, index.js parses event.body, so if body is undefined, requestBody will be {}
+      // and userInput will be undefined.
+      // If body is an empty string, JSON.parse("") throws error.
+      // If body is JSON.stringify({}), userInput is undefined.
+
+      // Let's test the case where body is present but userInput is missing
+      const eventWithEmptyBody = {
+        headers: { Authorization: "Bearer test-token" },
+        rawPath: "/",
+        body: JSON.stringify({ userName: mockUserName }) // No userInput
+      };
+
+
+      const result = await handler(eventWithEmptyBody);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).error).toBe("Missing userInput in request body");
+    });
+
+    test("should return 401 if Authorization header is missing", async () => {
+        const mockEvent = { // No headers
+            rawPath: "/",
+            body: JSON.stringify({ userInput: "test" }),
+        };
+        const result = await handler(mockEvent);
+        expect(result.statusCode).toBe(401);
+        expect(JSON.parse(result.body).error).toBe("Missing or invalid Authorization header");
+    });
+
+    test("should return 429 if rate limited", async () => {
+      verifyAccessToken.mockResolvedValueOnce({ email: mockUserEmail });
+      checkMessageRateLimit.mockResolvedValueOnce({ canSend: false, message: "Rate limit exceeded" });
+
+      const mockEvent = getMockEvent();
+      const result = await handler(mockEvent);
+
+      expect(result.statusCode).toBe(429);
+      expect(JSON.parse(result.body).error).toBe("Rate limit exceeded");
+    });
+  });
+});
+// --- End Handler Tests ---
 
 describe("stab test", () => {
   test("should pass", () => { expect(true).toBe(true); });

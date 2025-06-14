@@ -44,6 +44,13 @@ exports.handler = async (event) => {
       return chatResponse;
     }
 
+    if (event.rawPath === "/checkChats") {
+      log(debug, "Routing to /checkChats...");
+      const chatResponse = await getChatLog(debug);
+      log(debug, "Get chat response:", chatResponse);
+      return chatResponse;
+    }
+
     if (!userInput) {
       return {
         statusCode: 400,
