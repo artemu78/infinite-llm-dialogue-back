@@ -1,5 +1,35 @@
 const { OAuth2Client } = require("google-auth-library");
 const AWS = require("aws-sdk");
+const { SchedulerClient, UpdateScheduleCommand, GetScheduleCommand } = require("@aws-sdk/client-scheduler");
+
+// IAM Permissions Required for Lambda Execution Role:
+// ----------------------------------------------------
+// This function requires several permissions depending on the operations it performs.
+//
+// For existing chat/news/DynamoDB operations (ensure these are already covered):
+// - dynamodb:PutItem (for storeChatMessage)
+// - dynamodb:Query (for getChatLog, checkMessageRateLimit)
+// - logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents (standard Lambda logging)
+// - Potentially others depending on the exact implementation of getNews if it uses AWS services.
+//
+// For NEW EventBridge Schedule Management (path: /manage-schedule):
+// - scheduler:GetSchedule
+// - scheduler:UpdateSchedule
+//
+// Both scheduler permissions should be scoped to the specific schedule resource:
+// Resource: "arn:aws:scheduler:us-east-1:236713206268:schedule/default/InfiniteDialogChatTrigger"
+//
+// Example Policy Snippet for Scheduler (to be added to existing role policy):
+// {
+//     "Effect": "Allow",
+//     "Action": [
+//         "scheduler:GetSchedule",
+//         "scheduler:UpdateSchedule"
+//     ],
+//     "Resource": "arn:aws:scheduler:us-east-1:236713206268:schedule/default/InfiniteDialogChatTrigger"
+// }
+//
+// Note: Google OAuth2 verification (verifyAccessToken) involves external calls, not direct AWS IAM.
 
 const { CLIENT_ID, personalities, log } = require('./config');
 const { verifyAccessToken } = require('./auth');
@@ -9,6 +39,11 @@ const { storeChatMessage, getChatLog, checkMessageRateLimit } = require('./servi
 
 exports.handler = async (event) => {
   let debug = false;
+
+  // Schedule Constants
+  const SCHEDULE_GROUP_NAME = "default";
+  const SCHEDULE_NAME = "InfiniteDialogChatTrigger";
+  const SCHEDULE_ARN = `arn:aws:scheduler:us-east-1:236713206268:schedule/${SCHEDULE_GROUP_NAME}/${SCHEDULE_NAME}`; // For logging or reference
 
   const authHeader = event.headers?.Authorization || event.headers?.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -42,6 +77,67 @@ exports.handler = async (event) => {
       const chatResponse = await getChatLog(debug);
       log(debug, "Get chat response:", chatResponse);
       return chatResponse;
+    }
+
+    // Route for managing the schedule
+    if (event.rawPath === "/manage-schedule") {
+      log(debug, "Routing to /manage-schedule...");
+      const { action } = requestBody; // Assuming action is in requestBody
+      if (!action || (action !== 'enable' && action !== 'disable')) {
+          return {
+              statusCode: 400,
+              body: JSON.stringify({ error: "Missing or invalid 'action' in request body for /manage-schedule. Must be 'enable' or 'disable'." }),
+          };
+      }
+
+      try {
+          const schedulerClient = new SchedulerClient({}); // Assumes default region from Lambda environment
+
+          // 1. Get the current schedule details
+          const getScheduleInput = {
+              Name: SCHEDULE_NAME,
+              GroupName: SCHEDULE_GROUP_NAME
+          };
+          const getCommand = new GetScheduleCommand(getScheduleInput);
+          const scheduleDetails = await schedulerClient.send(getCommand);
+
+          // 2. Prepare the update command
+          const updateCommandInput = {
+              Name: SCHEDULE_NAME,
+              GroupName: SCHEDULE_GROUP_NAME,
+              State: action === 'enable' ? 'ENABLED' : 'DISABLED',
+              // Pass through other required fields from the existing schedule
+              ScheduleExpression: scheduleDetails.ScheduleExpression,
+              Target: scheduleDetails.Target,
+              FlexibleTimeWindow: scheduleDetails.FlexibleTimeWindow,
+              // Optional fields that should also be passed if they exist
+              ...(scheduleDetails.Description && { Description: scheduleDetails.Description }),
+              ...(scheduleDetails.ScheduleExpressionTimezone && { ScheduleExpressionTimezone: scheduleDetails.ScheduleExpressionTimezone }),
+              ...(scheduleDetails.StartDate && { StartDate: scheduleDetails.StartDate }),
+              ...(scheduleDetails.EndDate && { EndDate: scheduleDetails.EndDate }),
+              ...(scheduleDetails.KmsKeyArn && { KmsKeyArn: scheduleDetails.KmsKeyArn }),
+              ...(scheduleDetails.DeadLetterConfig && { DeadLetterConfig: scheduleDetails.DeadLetterConfig }),
+              ...(scheduleDetails.RetryPolicy && { RetryPolicy: scheduleDetails.RetryPolicy }),
+          };
+
+          const updateCommand = new UpdateScheduleCommand(updateCommandInput);
+          await schedulerClient.send(updateCommand);
+
+          const message = `Schedule ${SCHEDULE_NAME} in group ${SCHEDULE_GROUP_NAME} ${action}d successfully.`;
+          log(debug, message);
+          return {
+              statusCode: 200,
+              body: JSON.stringify({ message: message }),
+          };
+
+      } catch (error) {
+          console.error(`Error ${action}ing schedule:`, error);
+          log(debug, `Error ${action}ing schedule: ${error.message}`);
+          return {
+              statusCode: 500,
+              body: JSON.stringify({ error: `Failed to ${action} schedule ${SCHEDULE_NAME}.`, details: error.message }),
+          };
+      }
     }
 
     if (!userInput) {
