@@ -1,5 +1,5 @@
 const AWS = require("aws-sdk");
-const { CHAT_TABLE_NAME, log } = require('../config.js'); // Import log from config.js
+const { CHAT_TABLE_NAME, log } = require("../config.js"); // Import log from config.js
 
 const dynamoDB = new AWS.DynamoDB.DocumentClient();
 
@@ -16,16 +16,18 @@ async function storeChatMessage(message, sender, email, debug) {
   };
 
   try {
-    if (process.env.NODE_ENV === 'test' || typeof jest !== 'undefined') {
+    if (process.env.NODE_ENV === "test" || typeof jest !== "undefined") {
       const mockClient = AWS.DynamoDB.DocumentClient();
       if (mockClient.put.mock) {
-         mockClient.put(params);
+        mockClient.put(params);
       } else {
-        console.warn("DynamoDB mock 'put' not found in test environment for storeChatMessage");
+        console.warn(
+          "DynamoDB mock 'put' not found in test environment for storeChatMessage"
+        );
         await dynamoDB.put(params).promise();
       }
-      if (typeof mockClient.promise === 'function') {
-          await mockClient.promise();
+      if (typeof mockClient.promise === "function") {
+        await mockClient.promise();
       }
       log(debug, "Stored chat message in DynamoDB (test):", params.Item);
       return;
@@ -51,13 +53,13 @@ async function getChatLog(debug) {
   };
 
   try {
-    if (process.env.NODE_ENV === 'test' || typeof jest !== 'undefined') {
+    if (process.env.NODE_ENV === "test" || typeof jest !== "undefined") {
       try {
         log(debug, "Executing getChatLog in test environment");
         const mockClient = AWS.DynamoDB.DocumentClient();
 
         if (mockClient.query.mock && !mockClient.query.mock.calls) {
-           mockClient.query.mock.calls = [];
+          mockClient.query.mock.calls = [];
         }
 
         const data = await mockClient.query(params).promise();
@@ -121,7 +123,7 @@ async function checkMessageRateLimit(senderEmail, debug) {
     console.log("Checking message delay with params:", params);
   }
   try {
-    if (process.env.NODE_ENV === 'test' || typeof jest !== 'undefined') {
+    if (process.env.NODE_ENV === "test" || typeof jest !== "undefined") {
       log(debug, "Executing checkMessageRateLimit in test environment");
 
       const mockClient = AWS.DynamoDB.DocumentClient();
@@ -142,13 +144,16 @@ async function checkMessageRateLimit(senderEmail, debug) {
           const timeDiffSeconds = (now - lastTimestamp) / 1000;
           const delayRequired = 60;
 
-          log(debug, `Time difference: ${timeDiffSeconds}s, Required: ${delayRequired}s`);
+          log(
+            debug,
+            `Time difference: ${timeDiffSeconds}s, Required: ${delayRequired}s`
+          );
 
           if (timeDiffSeconds < delayRequired) {
             const waitTime = Math.ceil(delayRequired - timeDiffSeconds);
             return {
               canSend: false,
-              message: `Please wait ${waitTime} seconds before sending another message.`
+              message: `Please wait ${waitTime} seconds before sending another message.`,
             };
           }
         }
