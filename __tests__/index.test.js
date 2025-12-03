@@ -12,6 +12,9 @@ var mockActualDDBPutMethod = jest.fn(function() { this.promise = mockDDBPutPromi
 var mockActualDDBQueryMethod = jest.fn(function() { this.promise = mockDDBQueryPromiseFn; return { promise: mockDDBQueryPromiseFn }; });
 var mockGenAIGenerateContent = jest.fn();
 
+var mockTransactWriteItemsPromiseFn = jest.fn();
+var mockActualTransactWriteItemsMethod = jest.fn(function() { return { promise: mockTransactWriteItemsPromiseFn }; });
+
 jest.mock("aws-sdk", () => {
   const createMockDocClientInstance = () => ({
     get: mockActualDDBGetMethod,
@@ -19,10 +22,14 @@ jest.mock("aws-sdk", () => {
     query: mockActualDDBQueryMethod,
     promise: mockSharedClientInstancePromise, // Should not be necessary if methods return { promise: fn }
   });
+  const createMockRawDynamoDBInstance = () => ({
+    transactWriteItems: mockActualTransactWriteItemsMethod,
+  });
   return {
-    DynamoDB: {
-      DocumentClient: jest.fn(createMockDocClientInstance),
-    },
+    DynamoDB: Object.assign(
+      jest.fn(createMockRawDynamoDBInstance),
+      { DocumentClient: jest.fn(createMockDocClientInstance) }
+    ),
   };
 });
 
