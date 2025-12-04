@@ -4,6 +4,10 @@ const NEWS_TABLE_NAME = "InfiniteChat_NewsAPI_Cache";
 const CHAT_TABLE_NAME = "InfiniteChat_ChatLog";
 const MODEL_NAME = process.env.GOOGLE_MODEL_NAME;
 const API_KEY = process.env.GOOGLE_API_KEY;
+
+// Multi-provider LLM API keys
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const NEWS_API_URL = `https://gnews.io/api/v4/search?q=artificial intelligence&lang=en&max=5&apikey=${VITE_GNEWS_API_KEY}`;
 
 const personalities = {
@@ -48,6 +52,8 @@ module.exports = {
   CHAT_TABLE_NAME,
   MODEL_NAME,
   API_KEY,
+  ANTHROPIC_API_KEY,
+  OPENAI_API_KEY,
   NEWS_API_URL,
   personalities,
   log,
