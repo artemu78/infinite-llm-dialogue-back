@@ -4,16 +4,32 @@ const { CHAT_TABLE_NAME, log } = require("../config.js"); // Import log from con
 const dynamoDB = new AWS.DynamoDB.DocumentClient();
 const dynamoDBRaw = new AWS.DynamoDB();
 
+/**
+ * Stores a chat message with isProcessed=false
+ * Requirements: 1.3, 1.4, 1.5, 2.1, 2.2, 2.3
+ * @param {string} message - The message content
+ * @param {string} sender - The sender identifier
+ * @param {string} email - The sender's email (optional for non-user messages)
+ * @param {boolean} debug - Enable debug logging
+ * @returns {Promise<void>}
+ */
 async function storeChatMessage(message, sender, email, debug) {
+  const item = {
+    id: "chat",
+    message,
+    sender,
+    datetime: new Date().getTime(),
+    isProcessed: false
+  };
+
+  // Only include email if it's defined and not a placeholder
+  if (email && email !== "-") {
+    item.email = email;
+  }
+
   const params = {
     TableName: CHAT_TABLE_NAME,
-    Item: {
-      id: "chat",
-      message,
-      sender,
-      datetime: new Date().getTime(),
-      email,
-    },
+    Item: item,
   };
 
   try {

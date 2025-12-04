@@ -22,7 +22,26 @@ exports.handler = async (event) => {
 
   try {
     const accessToken = authHeader.split(" ")[1];
-    const requestBody = event.body ? JSON.parse(event.body) : {};
+    
+    // Validate JSON payload structure (Requirements: 2.4)
+    let requestBody;
+    try {
+      requestBody = event.body ? JSON.parse(event.body) : {};
+    } catch (parseError) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Invalid JSON payload" }),
+      };
+    }
+
+    // Validate that requestBody is an object
+    if (typeof requestBody !== 'object' || requestBody === null || Array.isArray(requestBody)) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Request body must be a JSON object" }),
+      };
+    }
+
     const userInput = requestBody.userInput;
     const userName = requestBody.userName;
     debug = requestBody.debug || false;
@@ -44,10 +63,32 @@ exports.handler = async (event) => {
       return chatResponse;
     }
 
+    // Validate required fields for message submission (Requirements: 2.4)
     if (!userInput) {
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Missing userInput in request body" }),
+      };
+    }
+
+    if (typeof userInput !== 'string') {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "userInput must be a string" }),
+      };
+    }
+
+    if (!userName) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Missing userName in request body" }),
+      };
+    }
+
+    if (typeof userName !== 'string') {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "userName must be a string" }),
       };
     }
 
