@@ -1,8 +1,13 @@
 const AWS = require("aws-sdk");
 const { CHAT_TABLE_NAME, log } = require("../config.js"); // Import log from config.js
 
-const dynamoDB = new AWS.DynamoDB.DocumentClient();
-const dynamoDBRaw = new AWS.DynamoDB();
+const awsConfig = {};
+if (process.env.DYNAMODB_ENDPOINT) {
+  awsConfig.endpoint = process.env.DYNAMODB_ENDPOINT;
+}
+
+const dynamoDB = new AWS.DynamoDB.DocumentClient(awsConfig);
+const dynamoDBRaw = new AWS.DynamoDB(awsConfig);
 
 /**
  * Stores a chat message with isProcessed=false
@@ -85,12 +90,18 @@ async function getChatLog(debug) {
           log(debug, "Retrieved chat messages in test:", data.Items);
           return {
             statusCode: 200,
+            headers: {
+              "Access-Control-Allow-Origin": "*"
+            },
             body: JSON.stringify(data.Items),
           };
         } else if (data && data.error) {
           log(debug, "Retrieved error in test:", data.error);
           return {
             statusCode: 500,
+            headers: {
+              "Access-Control-Allow-Origin": "*"
+            },
             body: JSON.stringify({ error: data.error }),
           };
         }
@@ -98,12 +109,18 @@ async function getChatLog(debug) {
         log(debug, "No items found, returning empty array for test");
         return {
           statusCode: 200,
+          headers: {
+            "Access-Control-Allow-Origin": "*"
+          },
           body: JSON.stringify([]),
         };
       } catch (error) {
         console.error("Error retrieving chat messages in test:", error);
         return {
           statusCode: 500,
+          headers: {
+            "Access-Control-Allow-Origin": "*"
+          },
           body: JSON.stringify({ error: "Internal Server Error" }),
         };
       }
@@ -114,12 +131,18 @@ async function getChatLog(debug) {
     log(debug, "Retrieved chat messages:", items);
     return {
       statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
       body: JSON.stringify(items),
     };
   } catch (error) {
     console.error("Error retrieving chat messages:", error);
     return {
       statusCode: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
       body: JSON.stringify({ error: "Internal Server Error" }),
     };
   }
@@ -227,7 +250,7 @@ async function getChatMetadata(debug) {
 
   try {
     const data = await dynamoDB.get(params).promise();
-    
+
     if (!data.Item) {
       log(debug, "Chat metadata not found");
       return null;
@@ -316,7 +339,7 @@ async function getLatestMessage(debug) {
 
   try {
     const data = await dynamoDB.query(params).promise();
-    
+
     if (!data.Items || data.Items.length === 0) {
       log(debug, "No messages found");
       return null;

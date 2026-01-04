@@ -1,7 +1,7 @@
 const CLIENT_ID = process.env.VITE_GOOGLE_CLIENT_ID;
 const VITE_GNEWS_API_KEY = process.env.VITE_GNEWS_API_KEY;
-const NEWS_TABLE_NAME = "InfiniteChat_NewsAPI_Cache";
-const CHAT_TABLE_NAME = "InfiniteChat_ChatLog";
+const NEWS_TABLE_NAME = process.env.NEWS_TABLE_NAME || "InfiniteChat_NewsAPI_Cache";
+const CHAT_TABLE_NAME = process.env.CHAT_TABLE_NAME || "InfiniteChat_ChatLog";
 const MODEL_NAME = process.env.GOOGLE_MODEL_NAME;
 const API_KEY = process.env.GOOGLE_API_KEY;
 

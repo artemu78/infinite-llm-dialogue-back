@@ -7,11 +7,15 @@ version = 0.1
 [default.deploy.parameters]
 stack_name = "ILChat-Stack"
 resolve_s3 = true
-s3_prefix = "ILChat"
-region = "us-east-1"
+s3_prefix = "ILChat-Stack"
 confirm_changeset = true
-capabilities = "CAPABILITY_IAM"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+parameter_overrides = "GoogleModelName=\"gemini-3-flash-preview\""
+image_repositories = []
 
 [default.build.parameters]
 cached = true
 parallel = true
+
+[default.global.parameters]
+region = "us-east-1"

@@ -117,6 +117,9 @@ dist
 # DynamoDB Local files
 .dynamodb/
 
+# AWS SAM build directory
+.aws-sam/
+
 # TernJS port file
 .tern-port
 

@@ -5,15 +5,34 @@ const { CLIENT_ID, personalities, log } = require('./config');
 const { verifyAccessToken } = require('./auth');
 const { generateAiResponse } = require('./services/generativeAiService');
 const { getNews } = require('./services/newsService');
-const { storeChatMessage, getChatLog, checkMessageRateLimit } = require('./services/dynamoDbService');
+const { storeChatMessage, getChatLog, checkMessageRateLimit, getChatMetadata, initializeChatMetadata } = require('./services/dynamoDbService');
+const { initializeChatSystem } = require('./scripts/init-chat-metadata');
 
 exports.handler = async (event) => {
   let debug = false;
+
+  // Handle CORS Preflight
+  if (event.requestContext && event.requestContext.http && event.requestContext.http.method === 'OPTIONS') {
+    return {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+      },
+      body: ""
+    };
+  }
+
+  if (event.rawPath === "/init-chat" || event.rawPath.endsWith("/init-chat")) return checkInitChat(event);
 
   const authHeader = event.headers?.Authorization || event.headers?.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return {
       statusCode: 401,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
       body: JSON.stringify({
         error: "Missing or invalid Authorization header",
       }),
@@ -22,7 +41,7 @@ exports.handler = async (event) => {
 
   try {
     const accessToken = authHeader.split(" ")[1];
-    
+
     // Validate JSON payload structure (Requirements: 2.4)
     let requestBody;
     try {
@@ -44,7 +63,7 @@ exports.handler = async (event) => {
 
     const userInput = requestBody.userInput;
     const userName = requestBody.userName;
-    debug = requestBody.debug || false;
+    debug = requestBody.debug || (event.queryStringParameters && event.queryStringParameters.debug === 'true') || false;
 
     const tokenInfo = await verifyAccessToken(accessToken, debug);
     log(debug, "Received event path:", event.rawPath);
@@ -148,8 +167,8 @@ exports.handler = async (event) => {
       chosenPersonalities.map(async (personalityKey) => {
         const personalityConfig = personalities[personalityKey];
         if (!personalityConfig) {
-            log(debug, `Personality key "${personalityKey}" not found in config. Skipping.`);
-            return null;
+          log(debug, `Personality key "${personalityKey}" not found in config. Skipping.`);
+          return null;
         }
         const responseText = await generateAiResponse(userInput, personalityConfig, debug);
         await storeChatMessage(responseText, personalityKey, "-", debug);
@@ -166,6 +185,9 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
       body: JSON.stringify({ responses: validResponses }),
     };
 
@@ -176,15 +198,43 @@ exports.handler = async (event) => {
     let errorDetails = error.message;
 
     if (error.message === "Token not issued for this client" || error.message === "Invalid token") {
-        statusCode = 401;
-        errorMessage = error.message;
+      statusCode = 401;
+      errorMessage = error.message;
     } else if (error.response && error.response.data && error.response.data.error === "invalid_token") {
-         statusCode = 401;
-         errorMessage = error.response.data.error_description || "Invalid token";
+      statusCode = 401;
+      errorMessage = error.response.data.error_description || "Invalid token";
     }
     return {
       statusCode: statusCode,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
       body: JSON.stringify({ error: errorMessage, details: errorDetails }),
     };
   }
 };
+
+async function checkInitChat(event) {
+  const debug = event.queryStringParameters?.debug === 'true' || false;
+
+  log(debug, "Routing to /init-chat...");
+  try {
+    await initializeChatSystem();
+    return {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
+      body: JSON.stringify({ message: "Chat system initialized successfully" })
+    };
+  } catch (error) {
+    console.error("Error in checkInitChat:", error);
+    return {
+      statusCode: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
+      body: JSON.stringify({ error: "Failed to initialize chat system", details: error.message })
+    };
+  }
+}

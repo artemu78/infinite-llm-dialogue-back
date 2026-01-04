@@ -6,6 +6,7 @@
   "scripts": {
     "bump": "npm version patch --no-git-tag-version",
     "test": "jest",
+    "init-chat-metadata": "node scripts/init-chat-metadata.js",
     "zip": "zip -r deployment-package.zip * -x .env .gitignore __tests__/ coverage/ deployment/ *.zip package-*.* jest* README*",
     "upload-s3": "aws s3 cp deployment-package.zip s3://for-lambda-zip-uploads/deployment-package.zip",
     "update-lambda": "aws lambda update-function-code --function-name CallAIAPI --region us-east-1 --s3-bucket for-lambda-zip-uploads --s3-key deployment-package.zip",

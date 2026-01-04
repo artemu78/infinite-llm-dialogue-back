@@ -3,55 +3,26 @@ Transform: AWS::Serverless-2016-10-31
 Description: Infinite Dialogue - LLM Chat Backend Infrastructure
 
 Parameters:
-  GoogleApiKey:
-    Type: String
-    Description: Google Generative AI API Key
-    NoEcho: true
   GoogleModelName:
     Type: String
     Default: gemini-2.0-flash-lite-preview-02-05
     Description: Google AI Model Name
-  GoogleClientId:
+  Environment:
     Type: String
-    Description: Google OAuth Client ID for token verification
-    NoEcho: true
-  GNewsApiKey:
-    Type: String
-    Description: GNews API Key for news fetching
-    NoEcho: true
+    Default: prod
+    AllowedValues: [local, prod]
+    Description: Environment type (local for SAM local, prod for AWS deployment)
+
+Conditions:
+  IsLocalEnvironment: !Equals [!Ref Environment, local]
 
 Globals:
   Function:
     Timeout: 30
-    Runtime: nodejs18.x
+    Runtime: nodejs20.x
     MemorySize: 256
 
 Resources:
-  # SSM Parameters for storing secrets
-  ILChatGoogleApiKeyParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: /ILChat/GoogleApiKey
-      Type: String
-      Value: !Ref GoogleApiKey
-      Description: Google Generative AI API Key
-
-  ILChatGoogleClientIdParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: /ILChat/GoogleClientId
-      Type: String
-      Value: !Ref GoogleClientId
-      Description: Google OAuth Client ID
-
-  ILChatGNewsApiKeyParam:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: /ILChat/GNewsApiKey
-      Type: String
-      Value: !Ref GNewsApiKey
-      Description: GNews API Key
-
   # DynamoDB Table for Chat Messages
   ILChatChatLogTable:
     Type: AWS::DynamoDB::Table
@@ -106,10 +77,13 @@ Resources:
       Description: Infinite Dialogue main Lambda handler
       Environment:
         Variables:
-          GOOGLE_API_KEY: !Sub '{{resolve:ssm:/ILChat/GoogleApiKey}}'
+          GOOGLE_API_KEY: '{{resolve:ssm:/ILChat/GoogleApiKey}}'
           GOOGLE_MODEL_NAME: !Ref GoogleModelName
-          VITE_GOOGLE_CLIENT_ID: !Sub '{{resolve:ssm:/ILChat/GoogleClientId}}'
-          VITE_GNEWS_API_KEY: !Sub '{{resolve:ssm:/ILChat/GNewsApiKey}}'
+          VITE_GOOGLE_CLIENT_ID: '{{resolve:ssm:/ILChat/GoogleClientId}}'
+          VITE_GNEWS_API_KEY: '{{resolve:ssm:/ILChat/GNewsApiKey}}'
+          CHAT_TABLE_NAME: !Ref ILChatChatLogTable
+          NEWS_TABLE_NAME: !Ref ILChatNewsCacheTable
+          IS_LOCAL: !If [IsLocalEnvironment, "true", !Ref "AWS::NoValue"]
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ILChatChatLogTable
@@ -130,22 +104,91 @@ Resources:
             Path: /news
             Method: GET
             ApiId: !Ref ILChatHttpApi
+        InitChat:
+          Type: HttpApi
+          Properties:
+            Path: /init-chat
+            Method: GET
+            ApiId: !Ref ILChatHttpApi
         ProcessInput:
           Type: HttpApi
           Properties:
             Path: /
             Method: POST
             ApiId: !Ref ILChatHttpApi
-    DependsOn:
-      - ILChatGoogleApiKeyParam
-      - ILChatGoogleClientIdParam
-      - ILChatGNewsApiKeyParam
+
+  # Orchestrator Lambda Function
+  ILChatOrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ILChat_Orchestrator
+      CodeUri: .
+      Handler: orchestrator.handler
+      Description: Infinite Dialogue orchestrator for managing AI responses
+      Timeout: 60
+      Environment:
+        Variables:
+          GOOGLE_API_KEY: '{{resolve:ssm:/ILChat/GoogleApiKey}}'
+          GOOGLE_MODEL_NAME: !Ref GoogleModelName
+          ANTHROPIC_API_KEY: '{{resolve:ssm:/ILChat/AnthropicApiKey}}'
+          OPENAI_API_KEY: '{{resolve:ssm:/ILChat/OpenAIApiKey}}'
+          CHAT_TABLE_NAME: !Ref ILChatChatLogTable
+          IS_LOCAL: !If [IsLocalEnvironment, "true", !Ref "AWS::NoValue"]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ILChatChatLogTable
+        - SSMParameterReadPolicy:
+            ParameterName: ILChat/*
+
+  # EventBridge Scheduler for Orchestrator
+  ILChatOrchestratorSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: ILChat-Orchestrator-Schedule
+      Description: Triggers the orchestrator Lambda every 2 minutes
+      ScheduleExpression: rate(2 minutes)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt ILChatOrchestratorFunction.Arn
+        RoleArn: !GetAtt ILChatSchedulerRole.Arn
+
+  # IAM Role for EventBridge Scheduler
+  ILChatSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ILChat-Scheduler-Role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt ILChatOrchestratorFunction.Arn
+
+  # Lambda Permission for EventBridge Scheduler
+  ILChatOrchestratorInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ILChatOrchestratorFunction
+      Action: lambda:InvokeFunction
+      Principal: scheduler.amazonaws.com
+      SourceArn: !GetAtt ILChatOrchestratorSchedule.Arn
 
   # HTTP API Gateway
   ILChatHttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      StageName: prod
+      StageName: $default
       CorsConfiguration:
         AllowOrigins:
           - "*"
@@ -160,13 +203,19 @@ Resources:
 Outputs:
   ApiEndpoint:
     Description: HTTP API endpoint URL
-    Value: !Sub "https://${ILChatHttpApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Value: !Sub "https://${ILChatHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
   FunctionArn:
     Description: Lambda Function ARN
     Value: !GetAtt ILChatFunction.Arn
+  OrchestratorFunctionArn:
+    Description: Orchestrator Lambda Function ARN
+    Value: !GetAtt ILChatOrchestratorFunction.Arn
   ChatLogTableName:
     Description: DynamoDB Chat Log Table Name
     Value: !Ref ILChatChatLogTable
   NewsCacheTableName:
     Description: DynamoDB News Cache Table Name
     Value: !Ref ILChatNewsCacheTable
+  SchedulerArn:
+    Description: EventBridge Scheduler ARN
+    Value: !GetAtt ILChatOrchestratorSchedule.Arn
